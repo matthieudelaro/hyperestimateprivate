@@ -1,0 +1,106 @@
+[
+'data',
+'data',
+
+    'conv1_1', # data: data
+    'relu1_1',
+
+        'conv1_2', # data: conv1_1
+        'relu1_2',
+        'pool1',
+
+            'conv2_1', # data: pool1
+            'relu2_1',
+            'pool2',
+
+                'conv3_1', # data: pool2
+                'relu3_1',
+
+                    'conv3_2', # data: conv3_1
+                    'relu3_2',
+
+                        'conv3_3', # data: conv3_2
+                        'relu3_3',
+                        'pool3',
+
+                            'conv4_1', # data: pool3
+                            'relu4_1',
+
+                                'conv4_2', # data: conv4_1
+                                'relu4_2',
+
+                                    'conv4_3', # data: conv4_2
+                                    'relu4_3',
+                                    'pool4',
+
+                                        'conv5_1', # data: pool4
+                                        'relu5_1',
+
+                                            'conv5_2', # data: conv5_1
+                                            'relu5_2',
+
+                                                'conv5_3', # data: conv5_2
+                                                'relu5_3',
+                                                'pool5',
+
+                                                    'FS6.50', # data: pool5
+                                                    'relu6',
+                                                    'FS6.50-deconv',
+                                                    'FS6.50-deconv-relu',
+
+                                                'unpool5',
+                                                'deconv5_1',
+                                                'debn5_1',
+                                                'derelu5_1',
+
+                                            'deconv5_2',
+                                            'debn5_2',
+                                            'derelu5_2',
+
+                                        'deconv5_3',
+                                        'debn5_3',
+                                        'derelu5_3',
+
+                                    'unpool4',
+                                    'deconv4_1',
+                                    'debn4_1',
+                                    'derelu4_1',
+
+                                'deconv4_2',
+                                'debn4_2',
+                                'derelu4_2',
+
+                            'deconv4_3',
+                            'debn4_3',
+                            'derelu4_3',
+
+                        'unpool3',
+                        'deconv3_1',
+                        'debn3_1',
+                        'derelu3_1',
+
+                    'deconv3_2',
+                    'debn3_2',
+                    'derelu3_2',
+
+                'deconv3_3',
+                'debn3_3',
+                'derelu3_3',
+
+            'unpool2',
+            'deconv2_1',
+            'debn2_1',
+            'derelu2_1',
+
+        'unpool1',
+        'deconv1_1',
+        'debn1_1',
+        'derelu1_1',
+
+    'deconv1_2',
+    'debn1_2',
+    'derelu1_2',
+
+'data-deconv',
+
+'L2_loss']

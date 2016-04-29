@@ -1,0 +1,82 @@
+name: "uno_training_0_to_train_FS6.50-deconv"
+layers {
+  top: "pool5"
+  name: "pool5"
+  type: DATA
+  data_param {
+    source: "/home/wookjin/FeatureMaps/featuremap_lmdb_pool5"
+    batch_size: 100
+    backend: LMDB
+  }
+  include {
+    phase: TRAIN
+  }
+}
+layers {
+  top: "pool5"
+  name: "pool5"
+  type: DATA
+  data_param {
+    source: "/home/wookjin/FeatureMaps/featuremap_lmdb_pool5"
+    batch_size: 100
+    backend: LMDB
+  }
+  include {
+    phase: TEST
+  }
+}
+layers {
+  bottom: "pool5"
+  top: "FS6.50"
+  name: "FS6.50"
+  type: CONVOLUTION
+  blobs_lr: 0.0
+  blobs_lr: 0.0
+  weight_decay: 0.0
+  weight_decay: 0.0
+  convolution_param {
+    num_output: 50
+    kernel_size: 2
+  }
+}
+layers {
+  bottom: "FS6.50"
+  top: "FS6.50"
+  name: "relu6"
+  type: RELU
+}
+layers {
+  bottom: "FS6.50"
+  top: "FS6.50-deconv"
+  name: "FS6.50-deconv"
+  type: DECONVOLUTION
+  blobs_lr: 1.0
+  blobs_lr: 2.0
+  weight_decay: 1.0
+  weight_decay: 0.0
+  convolution_param {
+    num_output: 512
+    kernel_size: 2
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+    bias_filler {
+      type: "constant"
+      value: 0.0
+    }
+  }
+}
+layers {
+  bottom: "FS6.50-deconv"
+  top: "FS6.50-deconv"
+  name: "FS6.50-deconv-relu"
+  type: RELU
+}
+layers {
+  bottom: "FS6.50-deconv"
+  bottom: "pool5"
+  top: "loss"
+  name: "loss"
+  type: EUCLIDEAN_LOSS
+}
