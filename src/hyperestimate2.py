@@ -4,7 +4,7 @@ import unittest
 
 import caffe
 from caffe import layers as L, params as P, to_proto
-from caffe.proto import caffe_pb2
+from caffe.proto import caffe_pb2 as v2
 
 
 class Param(object):
@@ -14,60 +14,11 @@ class Param(object):
         self.rangee = rangee
         self.default = default
 
-    # def __getitem__(self, key):
-    #     if isinstance(key, slice):
-    #         key.start
-    #         key.step
-    #         key.stop
-    #     elif isinstance(key, int):
-    #         if key < 0:  # Handle negative indices
-    #         if key >= len(self):
-    #             raise IndexError("The index (%d) is out of range." % key)
-    #         return Bit.get(self._data, key)  # Get the data from elsewhere
-    #     else:
-    #         raise TypeError("Invalid argument type.")
-
 
 class Objective(object):
     def __init__(self, pretrainError, trainLoss):
         self.pretrainError = pretrainError
         self.trainLoss = trainLoss
-
-
-# class Block(object):
-#     """Represents the layers in a block."""
-#     def __init__(self, lowestLayer=None):
-#         if lowestLayer is None:
-#             self.layers = []
-#         else:
-#             self.layers = [lowestLayer]
-
-#     def append(self, highestLayer):
-#         self.highestLayer = highestLayer
-
-#     def getHighest(self):
-#         return self.highestLayer
-
-
-def convRelu(bottom, name, ks, nout, stride=1, pad=0, group=1):
-    conv = L.Convolution(bottom, kernel_size=ks, stride=stride,
-                                num_output=nout, pad=pad, group=group,
-                                name=name+"Conv")
-    return conv, L.ReLU(conv, in_place=True, name=name+"ReLU")
-
-
-def maxPool(bottom, ks, stride=1):
-    return L.Pooling(bottom, pool=P.Pooling.MAX, kernel_size=ks, stride=stride)
-
-
-def deconvRelu(bottom, name, ks, nout, stride=1, pad=0, group=1):
-    conv = L.Deconvolution(bottom,
-                                name=name+"Deconv")
-    return conv, L.ReLU(conv, in_place=True, name=name+"ReLU")
-
-
-def maxUnpool(bottom, ks, stride=1):
-    return L.Unpooling(bottom, unpool=P.Unpooling.MAX, kernel_size=ks, stride=stride, unpool_size=8)
 
 
 class ArchDef(object):
@@ -152,6 +103,82 @@ def Hyperestimate(params, archDef):
 
 interactive = {}
 
+
+def dataLayer(layer, tops, sourcePath, meanFilePath):
+    # data = net.layer.add()
+    layer.name = "data"
+    layer.type = "Data"
+    layer.data_param.source = sourcePath
+    layer.data_param.backend = caffe.proto.caffe_pb2.DataParameter.LMDB
+    layer.data_param.batch_size = 64
+    layer.transform_param.mean_file = meanFilePath
+
+    for top in tops:
+        layer.top.append(top)
+
+    return layer
+
+
+def testPhase(layer):
+    include = layer.include.add()
+    include.phase = v2.TEST
+    return layer
+
+
+def trainPhase(layer):
+    include = layer.include.add()
+    include.phase = v2.TRAIN
+    return layer
+
+
+def plug(lowerLayer, higherLayer):
+    higherLayer.bottom.append(lowerLayer.top[len(higherLayer.bottom)])
+    return higherLayer
+
+
+def relu(lowerLayer, layer):
+    layer.type = "ReLU"
+    layer.name = lowerLayer.name + "_ReLU"
+    layer.bottom.append(lowerLayer.top[0])
+    layer.top.append(lowerLayer.top[0])
+    return layer
+
+
+def conv(layer, name, ks, nout, pad=0):
+    layer.type = "Convolution"
+    layer.name = name
+    layer.top.append(name)
+
+    paramWeight = layer.param.add()
+    paramWeight.lr_mult = 1
+    paramWeight.decay_mult = 0
+
+    paramBias = layer.param.add()
+    paramBias.lr_mult = 2
+    paramBias.decay_mult = 0
+
+    layer.convolution_param.num_output = nout
+    layer.convolution_param.pad.append(pad)
+    layer.convolution_param.kernel_size.append(ks)
+    layer.convolution_param.weight_filler.type = "xavier"
+    layer.convolution_param.bias_filler.type = "constant"
+    layer.convolution_param.bias_filler.value = 0
+    return layer
+
+
+def maxPool(layer, name, ks, stride=1, outputMask=False):
+    layer.type = "Pooling"
+    layer.name = name
+    layer.top.append(name)
+    if outputMask is True:
+        layer.top.append(name + "_mask")
+    layer.pooling_param.pool = v2.PoolingParameter.MAX
+    layer.pooling_param.kernel_size = ks
+    layer.pooling_param.stride = stride
+    return layer
+
+
+
 class TestBasic(unittest.TestCase):
     def setUp(self):
         # self.elements = [0, 1, 2, 4, 8, 16]
@@ -160,7 +187,7 @@ class TestBasic(unittest.TestCase):
         # self.bValues = BitOver(self.values)
         pass
 
-    def test_len(self):
+    def test2(self):
         objectives = Objective(0.4, 500000)
         params = {
             "featuresPerLayer": Param("", slice(4, 64, 10), 64),
@@ -173,42 +200,45 @@ class TestBasic(unittest.TestCase):
         print(params)
         archDef = ArchDef(objectives, params)
 
-        # data, label = L.Data(source="here", backend=P.Data.LMDB, batch_size=10, ntop=2,
-            # transform_param=dict(crop_size=227, mean_value=[104, 117, 123], mirror=True))
-        data = L.Data(source="here", backend=P.Data.LMDB, batch_size=10, ntop=1,
-            transform_param=dict(crop_size=227, mean_value=[104, 117, 123], mirror=True))
-        print("data", data)
+        net = caffe.proto.caffe_pb2.NetParameter()
+        data = testPhase(dataLayer(net.layer.add(), tops=["data", "labels"],
+                         sourcePath="here", meanFilePath="here2"))
+        top = relu(plug(data, conv(net.layer.add(), "conv1", ks=2, nout=50)), net.layer.add())
+        top = plug(top, maxPool(net.layer.add(), "pool1", ks=2))
+        # top = plug(top, relu(net.layer.add(), top))
+        print("net\n", net)
 
-        block = archDef.createEncoderBlock(data, 0, {
-            "featuresPerLayer": 64,
-            "convLayersPerBlock": 2,
-            "blocks": 3,
-            "kernelSize": 3,
-            "strideConv": 3,
-            "stridePool": 2
-            })
+        # block = archDef.createEncoderBlock(data, 0, {
+        #     "featuresPerLayer": 64,
+        #     "convLayersPerBlock": 2,
+        #     "blocks": 3,
+        #     "kernelSize": 3,
+        #     "strideConv": 3,
+        #     "stridePool": 2
+        #     })
         # print("blocks", block[-1])
-        print("blocks", to_proto(block[-1]))
+        # print("blocks", to_proto(block[-1])) # <<
         # print(to_proto(block))
         # self.assertEqual(len(self.elements)*8, self.bElements.len())
         # self.assertEqual(len(self.values)*8, self.bValues.len())
 
-        middle = L.Convolution(block[-1], kernel_size=4,
-                                num_output=50,
-                                name="middle")
+        # middle = L.Convolution(block[-1], kernel_size=4,
+                                # num_output=50,
+                                # name="middle")
 
-        unblock = archDef.createDecoderBlock(middle, 0, block, {
-            "featuresPerLayer": 64,
-            "convLayersPerBlock": 2,
-            "blocks": 3,
-            "kernelSize": 3,
-            "strideConv": 3,
-            "stridePool": 2
-            })
-        print("unblock", to_proto(unblock[-1]))
+        # unblock = archDef.createDecoderBlock(middle, 0, block, {
+        #     "featuresPerLayer": 64,
+        #     "convLayersPerBlock": 2,
+        #     "blocks": 3,
+        #     "kernelSize": 3,
+        #     "strideConv": 3,
+        #     "stridePool": 2
+        #     })
+        # print("unblock", to_proto(unblock[-1])) # <<
 
-        interactive["block"] = block
-        interactive["unblock"] = unblock
+        # interactive["block"] = block
+        # interactive["unblock"] = unblock
+        interactive["net"] = net
 
 
 
