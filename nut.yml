@@ -3,6 +3,7 @@ project_name: hyperestimate
 based_on:
   docker_image: matthieudelaro/work-on-caffe
 container_working_directory: /src
+# container_working_directory: /opt/caffe
 enable_nvidia_devices: true
 mount:
   main:
@@ -15,6 +16,14 @@ mount:
   - ./dataset
   - /dataset
 macros:
+  test:
+    usage: run simple tests
+    actions:
+    - ipython hyperestimate2.py
+  autocomplete:
+    usage: access autocompletion of caffe in ipython
+    actions:
+    - ipython -i importCaffe.py
   download:
     usage: download caffe
     actions:
@@ -44,10 +53,10 @@ macros:
     usage: build pycaffe
     actions:
     - make pycaffe -j8
-  test:
-    usage: run the tests
-    actions:
-    - make runtest -j8
+  # test:
+  #   usage: run the tests
+  #   actions:
+  #   - make runtest -j8
   test-cpu:
     usage: run the tests in CPU mode only (set CPU_ONLY from Makefile.config on the fly)
     actions:
