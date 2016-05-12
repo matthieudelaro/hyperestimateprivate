@@ -1,7 +1,6 @@
-syntax_version: "5"
+syntax_version: "6"
 project_name: hyperestimate
-based_on:
-  docker_image: matthieudelaro/work-on-caffe
+docker_image: matthieudelaro/work-on-caffe
 container_working_directory: /src
 # container_working_directory: /opt/caffe
 enable_nvidia_devices: true
@@ -18,8 +17,9 @@ mount:
 macros:
   test:
     usage: run simple tests
+    enable_nvidia_devices: false
     actions:
-    - ipython hyperestimate2.py
+    - ipython main.py
   autocomplete:
     usage: access autocompletion of caffe in ipython
     actions:

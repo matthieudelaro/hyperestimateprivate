@@ -8,6 +8,7 @@ from caffe.proto import caffe_pb2 as v2
 
 import tempfile
 import os
+import uuid
 
 
 def getSGDSolver(solver):
@@ -25,12 +26,13 @@ def getSGDSolver(solver):
 
     try:
         # WRITE
-        solverFileTemp = open("tmp_pycaffe_to_caffe_solver.sh", "w+")
+        solverName = "prototxt/" + "tmp_" + uuid.uuid4().hex + "_pycaffe_to_caffe_solver.sh"
+        solverFileTemp = open(solverName, "w+")
         solverFileTemp.write(str(solver))
         solverFileTemp.close()
 
         # READ
-        solverFileTemp = open("tmp_pycaffe_to_caffe_solver.sh", "r")
+        solverFileTemp = open(solverName, "r")
         sgdSolver = caffe.SGDSolver(solverFileTemp.name)
         solverFileTemp.close()
 
@@ -54,8 +56,11 @@ def getSolverNet(solver, net):
 
     try:
         # WRITE
-        solverFileTemp = open("tmp_pycaffe_to_caffe_solver.sh", "w+")
-        netFileTemp = open("tmp_pycaffe_to_caffe_net.sh", "w+")
+        id = uuid.uuid4().hex
+        solverName = "prototxt/" + "tmp_" + id + "_pycaffe_to_caffe_solver.sh"
+        netName = "prototxt/" + "tmp_" + id + "_pycaffe_to_caffe_net.sh"
+        solverFileTemp = open(solverName, "w+")
+        netFileTemp = open(netName, "w+")
         netFileTemp.write(str(net))
 
         solver.net = netFileTemp.name
@@ -65,8 +70,8 @@ def getSolverNet(solver, net):
         netFileTemp.close()
 
         # READ
-        solverFileTemp = open("tmp_pycaffe_to_caffe_solver.sh", "r")
-        netFileTemp = open("tmp_pycaffe_to_caffe_net.sh", "r")
+        solverFileTemp = open(solverName, "r")
+        netFileTemp = open(netName, "r")
 
         sgdSolver = caffe.SGDSolver(solverFileTemp.name)
 
@@ -77,6 +82,27 @@ def getSolverNet(solver, net):
     except Error as e:
         print("Could not write/parse to/from file.", e.strerror)
 
+
+def saveToFiles(name, solver, net):
+    """Serialize them to files"""
+
+    try:
+        # WRITE
+        solverName = "prototxt/" + name + "_solver.sh"
+        netName = "prototxt/" + name + "_net.sh"
+        solverFileTemp = open(solverName, "w+")
+        netFileTemp = open(netName, "w+")
+        netFileTemp.write(str(net))
+
+        solver.net = netFileTemp.name
+        solverFileTemp.write(str(solver))
+
+        solverFileTemp.close()
+        netFileTemp.close()
+
+        return (solverName, netName)
+    except Error as e:
+        print("Could not write to files: ", e.strerror)
 
 class Param(object):
     """Defines a hyper param to estimate"""
@@ -380,7 +406,6 @@ class TestBasic(unittest.TestCase):
             }
         print(params)
         archDef = ArchDef(objectives, params)
-
 
         solver_param = v2.SolverParameter()
         # solver_param.test_iter.append(10)

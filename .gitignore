@@ -1,0 +1,5 @@
+src/tmp_*
+src/snapshots/*
+src/prototxt/*
+*lock.mdb
+

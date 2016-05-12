@@ -1,61 +1,131 @@
 from __future__ import print_function
+# import utils
+import unittest
+
 import caffe
 from caffe import layers as L, params as P, to_proto
-from caffe.proto import caffe_pb2
+from caffe.proto import caffe_pb2 as v2
 
-# helper function for common structures
+import os
+from prototype import *
 
-def conv_relu(bottom, ks, nout, stride=1, pad=0, group=1):
-    conv = L.Convolution(bottom, kernel_size=ks, stride=stride,
-                                num_output=nout, pad=pad, group=group)
-    return conv, L.ReLU(conv, in_place=True)
+USE_GPU = False
 
-def fc_relu(bottom, nout):
-    fc = L.InnerProduct(bottom, num_output=nout)
-    return fc, L.ReLU(fc, in_place=True)
 
-def max_pool(bottom, ks, stride=1):
-    return L.Pooling(bottom, pool=P.Pooling.MAX, kernel_size=ks, stride=stride)
-
-def caffenet(lmdb, batch_size=256, include_acc=False):
-    data, label = L.Data(source=lmdb, backend=P.Data.LMDB, batch_size=batch_size, ntop=2,
-        transform_param=dict(crop_size=227, mean_value=[104, 117, 123], mirror=True))
-
-    # the net itself
-    conv1, relu1 = conv_relu(data, 11, 96, stride=4)
-    pool1 = max_pool(relu1, 3, stride=2)
-    norm1 = L.LRN(pool1, local_size=5, alpha=1e-4, beta=0.75)
-    conv2, relu2 = conv_relu(norm1, 5, 256, pad=2, group=2)
-    pool2 = max_pool(relu2, 3, stride=2)
-    norm2 = L.LRN(pool2, local_size=5, alpha=1e-4, beta=0.75)
-    conv3, relu3 = conv_relu(norm2, 3, 384, pad=1)
-    conv4, relu4 = conv_relu(relu3, 3, 384, pad=1, group=2)
-    conv5, relu5 = conv_relu(relu4, 3, 256, pad=1, group=2)
-    pool5 = max_pool(relu5, 3, stride=2)
-    fc6, relu6 = fc_relu(pool5, 4096)
-    drop6 = L.Dropout(relu6, in_place=True)
-    fc7, relu7 = fc_relu(drop6, 4096)
-    drop7 = L.Dropout(relu7, in_place=True)
-    fc8 = L.InnerProduct(drop7, num_output=1000)
-    loss = L.SoftmaxWithLoss(fc8, label)
-
-    if include_acc:
-        acc = L.Accuracy(fc8, label)
-        return acc
-        # return to_proto(loss, acc)
-        # return to_proto(loss, acc)
+def main():
+    if USE_GPU:
+        caffe.set_mode_gpu()
     else:
-        return loss
-        # return to_proto(loss)
+        caffe.set_mode_cpu()
 
-def make_net():
-    with open('train.prototxt', 'w') as f:
-        print(caffenet('/path/to/caffe-train-lmdb'), file=f)
+    objectives = Objective(0.4, 500000)
+    params = {
+        "featuresPerLayer": Param("", slice(4, 64, 10), 64),
+        "convLayersPerBlock": Param("", slice(1, 5, 1), 2),
+        "blocks": Param("", slice(1, 5, 1), 3),
+        "kernelSize": Param("", slice(1, 5, 1), 3),
+        "kernelSizeLocal": Param("", slice(1, 5, 1), 1),
+        "strideConv": Param("", slice(1, 1, 1), 1),
+        "stridePool": Param("", slice(1, 5, 1), 3),
+        "inputSize": Param("", slice(32, 32, 1), 32)
+        }
+    archDef = ArchDef(objectives, params)
 
-    with open('test.prototxt', 'w') as f:
-        print(caffenet('/path/to/caffe-val-lmdb', batch_size=50, include_acc=True), file=f)
+    settings = {
+        "featuresPerLayer": 64,
+        "convLayersPerBlock": 2,
+        "blocks": 3,
+        "kernelSize": 3,
+        "kernelSizeLocal": 1,
+        "strideConv": 1,
+        "stridePool": 2,
+        "inputSize": 32
+        }
+
+    trainArchitecture("0", archDef, settings)
+
+
+def trainArchitecture(ID, archDef, settings):
+    weightsFilePath = pretrainClassification(ID, archDef, settings)
+    print("pretraining done: ", weightsFilePath)
+    weightsFilePath = trainReconstruct(ID, archDef, settings, weightsFilePath)
+    print("training done: ", weightsFilePath)
+
+
+def pretrainClassification(ID, archDef, settings):
+    # create solver
+    solver_param = v2.SolverParameter()
+    solver_param.base_lr = 1
+    solver_param.display = 1
+    solver_param.max_iter = 50
+    solver_param.lr_policy = "fixed"
+    solver_param.momentum = 0.5
+    solver_param.weight_decay = 0.004
+    solver_param.snapshot = 200
+    solver_param.snapshot_prefix = "snapshots/" + ID + "_classify"
+    # if USE_GPU:
+    #     solver_param.solver_mode = solver_param.GPU
+    # else:
+    #     solver_param.solver_mode = solver_param.CPU
+
+    # create network
+    net_param = caffe.proto.caffe_pb2.NetParameter()
+
+    (dataTrain, dataTest) = dataLayers(net_param)
+
+    # create the conv pool blocks
+    blocks = []
+    for i in range(settings["blocks"]):
+        block = archDef.createEncoderBlock(net_param, i, settings, outputMask=False)
+        blocks.append(block)
+
+    # create the middle layer
+    middleKernelSize = settings["inputSize"] / (2**settings["blocks"])
+    middleConv = plug(blocks[-1][-1], conv(net_param.layer.add(),
+                                  name="middle_conv",
+                                  ks=middleKernelSize,
+                                  nout=1024,
+                                  stride=1
+                                  ))
+
+    # create additional fully connected layer to classify
+    top = plug(middleConv, fullyConnected(net_param.layer.add(), name="fc1", nout=1024))
+    top = trainPhase(dropout(top, net_param.layer.add(), ratio=0.5))
+    top = relu(top, net_param.layer.add())
+
+    top = plug(top, fullyConnected(net_param.layer.add(), name="fc2", nout=100))
+
+    top = plug(dataTrain, plug(top, softmax(net_param.layer.add())))
+
+    plug(dataTest, plug(top, testPhase(accuracy(net_param.layer.add(), 1))))
+    plug(dataTest, plug(top, testPhase(accuracy(net_param.layer.add(), 5))))
+
+    (solverFileName, netFileName) = saveToFiles(ID + "_classify", solver_param, net_param)
+    [solver, net] = getSolverNet(solver_param, net_param)
+
+    # train
+    iterations = 1000
+    solver.step(iterations)
+
+    # save
+    weightsFilePath = "snapshots/" + ID + "_classify_" + str(iterations)
+    net.save(weightsFilePath)
+    return weightsFilePath
+
+
+def trainReconstruct(ID, archDef, settings, givenWeightsFilePath):
+    pass
+
+
+def dataLayers(net_param):
+    dataTest = testPhase(dataLayer(net_param.layer.add(), tops=["data", "label"],
+                sourcePath="/dataset/cifar100_lmdb_lab/cifar100_test_lmdb",
+                meanFilePath="/dataset/cifar100_lmdb_lab/mean.binaryproto"))
+    dataTrain = trainPhase(dataLayer(net_param.layer.add(), tops=["data", "label"],
+                sourcePath="/dataset/cifar100_lmdb_lab/cifar100_train_lmdb",
+                meanFilePath="/dataset/cifar100_lmdb_lab/mean.binaryproto"))
+    return (dataTest, dataTrain)
 
 if __name__ == '__main__':
-    # make_net()
-    caffe.set_mode_cpu();
-    net = caffenet('/path/to/caffe-val-lmdb', batch_size=50, include_acc=True)
+    main()
+
